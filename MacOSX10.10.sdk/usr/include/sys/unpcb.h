@@ -113,6 +113,135 @@ struct name {				\
 #define _UNPCB_PTR(x)			x
 #endif
 
+#ifdef PRIVATE
+#ifndef KERNEL
+_UCPCB_LIST_HEAD(unp_head, unpcb);
+#else
+LIST_HEAD(unp_head, unpcb);
+#define sotounpcb(so)   ((struct unpcb *)((so)->so_pcb))
+
+struct	unpcb {
+	LIST_ENTRY(unpcb) unp_link;	/* glue on list of all PCBs */
+	struct socket	*unp_socket;	/* pointer back to socket */
+	struct vnode	*unp_vnode;	/* if associated with file */
+	ino_t			unp_ino;	/* fake inode number */
+	struct unpcb	*unp_conn;	/* control block of connected socket */
+	struct unp_head	unp_refs;	/* referencing socket linked list */
+	LIST_ENTRY(unpcb) unp_reflink;	/* link in unp_refs list */
+	struct sockaddr_un *unp_addr;	/* bound address of socket */
+	int		unp_cc;		/* copy of rcv.sb_cc */
+	int		unp_mbcnt;	/* copy of rcv.sb_mbcnt */
+	unp_gen_t	unp_gencnt;	/* generation count of this instance */
+	int		unp_flags;	/* flags */
+	struct xucred	unp_peercred;	/* peer credentials, if applicable */
+	decl_lck_mtx_data( ,unp_mtx);	/* per unpcb lock */
+	int		rw_thrcount;    /* disconnect should wait for this count to become zero */
+};
+#endif /* KERNEL */
+
+/*
+ * Flags in unp_flags.
+ *
+ * UNP_HAVEPC - indicates that the unp_peercred member is filled in
+ * and is really the credentials of the connected peer.  This is used
+ * to determine whether the contents should be sent to the user or
+ * not.
+ *
+ * UNP_HAVEPCCACHED - indicates that the unp_peercred member is filled
+ * in, but does *not* contain the credentials of the connected peer
+ * (there may not even be a peer).  This is set in unp_listen() when
+ * it fills in unp_peercred for later consumption by unp_connect().
+ */
+#define UNP_HAVEPC			0x0001
+#define UNP_HAVEPCCACHED		0x0002
+#define UNP_DONTDISCONNECT		0x0004
+#define	UNP_TRACE_MDNS			0x1000
+
+#ifdef KERNEL
+struct  unpcb_compat {
+#else /* KERNEL */
+#define unpcb_compat unpcb
+struct	unpcb {
+#endif /* KERNEL */
+	_UNPCB_LIST_ENTRY(unpcb_compat)	unp_link;	/* glue on list of all PCBs */
+	_UNPCB_PTR(struct socket *)	unp_socket;	/* pointer back to socket */
+	_UNPCB_PTR(struct vnode *)	unp_vnode;	/* if associated with file */
+	u_int32_t			unp_ino;	/* fake inode number */
+	_UNPCB_PTR(struct unpcb_compat *) unp_conn;	/* control block of connected socket */
+#if defined(KERNEL)
+	u_int32_t			unp_refs;
+#else
+	struct unp_head			unp_refs;	/* referencing socket linked list */
+#endif
+	_UNPCB_LIST_ENTRY(unpcb_compat) unp_reflink;	/* link in unp_refs list */
+	_UNPCB_PTR(struct sockaddr_un *) unp_addr;	/* bound address of socket */
+	int				unp_cc;		/* copy of rcv.sb_cc */
+	int				unp_mbcnt;	/* copy of rcv.sb_mbcnt */
+	unp_gen_t			unp_gencnt;	/* generation count of this instance */
+};
+
+/* Hack alert -- this structure depends on <sys/socketvar.h>. */
+#ifdef  _SYS_SOCKETVAR_H_
+
+#pragma pack(4)
+
+struct  xunpcb {
+	u_int32_t			xu_len;		/* length of this structure */
+	_UNPCB_PTR(struct unpcb_compat *) xu_unpp;	/* to help netstat, fstat */
+	struct unpcb_compat		xu_unp;		/* our information */
+	union {
+		struct sockaddr_un	xuu_addr;	/* our bound address */
+		char			xu_dummy1[256];
+	} xu_au;
+#define xu_addr xu_au.xuu_addr
+	union {
+		struct sockaddr_un	xuu_caddr;	/* their bound address */
+		char			xu_dummy2[256];
+	} xu_cau;
+#define xu_caddr xu_cau.xuu_caddr
+	struct xsocket			xu_socket;
+	u_quad_t			xu_alignment_hack;
+};
+
+
+struct xunpcb64_list_entry {
+    u_int64_t   le_next;
+    u_int64_t   le_prev;
+};
+
+struct xunpcb64 {
+	u_int32_t			xu_len;		/* length of this structure */
+	u_int64_t			xu_unpp;	/* to help netstat, fstat */
+	struct xunpcb64_list_entry	xunp_link;	/* glue on list of all PCBs */
+	u_int64_t			xunp_socket;	/* pointer back to socket */
+	u_int64_t			xunp_vnode;	/* if associated with file */
+	u_int64_t			xunp_ino;	/* fake inode number */
+	u_int64_t			xunp_conn;	/* control block of connected socket */
+	u_int64_t			xunp_refs;	/* referencing socket linked list */
+	struct xunpcb64_list_entry	xunp_reflink;	/* link in unp_refs list */
+	int				xunp_cc;		/* copy of rcv.sb_cc */
+	int				xunp_mbcnt;	/* copy of rcv.sb_mbcnt */
+	unp_gen_t			xunp_gencnt;	/* generation count of this instance */
+	int				xunp_flags;	/* flags */
+        union {
+                struct sockaddr_un      	xuu_addr;
+                char                    	xu_dummy1[256];
+        } 				xu_au;		/* our bound address */
+#define xunp_addr xu_au.xuu_addr
+        union {
+                struct sockaddr_un      	xuu_caddr;
+                char                    	xu_dummy2[256];
+        }				xu_cau;		/* their bound address */
+#define xunp_caddr xu_cau.xuu_caddr
+	struct xsocket64	xu_socket;
+};
+
+
+#pragma pack()
+
+#endif /* _SYS_SOCKETVAR_H_ */
+
+#endif /* PRIVATE */
 
 struct	xunpgen {
 	u_int32_t	xug_len;

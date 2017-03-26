@@ -218,5 +218,111 @@ struct kev_vendor_code {
  */
 #define	SIOCGKEVVENDOR	_IOWR('e', 4, struct kev_vendor_code)
 
+#ifdef PRIVATE
+struct xkevtpcb {
+	u_int32_t	kep_len;
+	u_int32_t	kep_kind;
+	u_int64_t	kep_evtpcb;
+	u_int32_t 	kep_vendor_code_filter;
+	u_int32_t 	kep_class_filter;
+	u_int32_t 	kep_subclass_filter;
+};
 
+struct kevtstat {
+	u_int64_t	kes_pcbcount __attribute__((aligned(8)));
+	u_int64_t	kes_gencnt __attribute__((aligned(8)));
+	u_int64_t	kes_badvendor __attribute__((aligned(8)));
+	u_int64_t	kes_toobig __attribute__((aligned(8)));
+	u_int64_t	kes_nomem __attribute__((aligned(8)));
+	u_int64_t	kes_fullsock __attribute__((aligned(8)));
+	u_int64_t	kes_posted __attribute__((aligned(8)));
+	
+};
+#endif /* PRIVATE */
+
+#ifdef KERNEL
+/*!
+	@define N_KEV_VECTORS
+	@discussion The maximum number of kev_d_vectors for a kernel event.
+ */
+#define	N_KEV_VECTORS	5
+
+/*!
+	@struct kev_d_vectors
+	@discussion This structure is used to append some data to a kernel
+		event.
+	@field data_length The length of data.
+	@field data_ptr A pointer to data.
+ */
+struct kev_d_vectors {
+	u_int32_t	data_length;	/* Length of the event data */
+	void		*data_ptr;	/* Pointer to event data */
+};
+
+/*!
+	@struct kev_msg
+	@discussion This structure is used when posting a kernel event.
+	@field vendor_code The vendor code assigned by kev_vendor_code_find.
+	@field kev_class The event's class.
+	@field kev_class The event's subclass.
+	@field kev_class The event's code.
+	@field dv An array of vectors describing additional data to be appended
+		to the kernel event.
+ */
+struct kev_msg {
+	u_int32_t vendor_code;		/* For non-Apple extensibility */
+	u_int32_t kev_class;		/* Layer of event source */
+	u_int32_t kev_subclass;		/* Component within layer */
+	u_int32_t event_code;		/* The event code */
+	struct kev_d_vectors dv[N_KEV_VECTORS];	/* Up to n data vectors */
+};
+
+/*!
+	@function kev_vendor_code_find
+	@discussion Lookup a vendor_code given a unique string. If the vendor
+		code has not been used since launch, a unique integer will be
+		assigned for that string. Vendor codes will remain the same
+		until the machine is rebooted.
+	@param vendor_string A bundle style vendor identifier(i.e. com.apple).
+	@param vendor_code Upon return, a unique vendor code for use when
+		posting kernel events.
+	@result May return ENOMEM if memory constraints prevent allocation of a
+		new vendor code.
+ */
+errno_t	kev_vendor_code_find(const char *vendor_string, u_int32_t *vendor_code);
+
+/*!
+	@function kev_msg_post
+	@discussion Post a kernel event message.
+	@param event_msg A structure defining the kernel event message to post.
+	@result Will return zero upon success. May return a number of errors
+		depending on the type of failure. EINVAL indicates that there
+		was something wrong with the kerne event. The vendor code of
+		the kernel event must be assigned using kev_vendor_code_find.
+		If the message is too large, EMSGSIZE will be returned.
+ */
+errno_t kev_msg_post(struct kev_msg *event_msg);
+
+#ifdef PRIVATE
+/*
+ * Internal version of kev_msg_post. Allows posting Apple vendor code kernel
+ * events.
+ */
+int	kev_post_msg(struct kev_msg *event);
+
+LIST_HEAD(kern_event_head, kern_event_pcb);
+
+struct kern_event_pcb {
+	decl_lck_mtx_data(, evp_mtx);	/* per-socket mutex */
+	LIST_ENTRY(kern_event_pcb) evp_link;	/* glue on list of all PCBs */
+	struct socket *evp_socket;		/* pointer back to socket */
+	u_int32_t evp_vendor_code_filter;
+	u_int32_t evp_class_filter;
+	u_int32_t evp_subclass_filter;
+};
+
+#define	sotoevpcb(so)   ((struct kern_event_pcb *)((so)->so_pcb))
+
+#endif /* PRIVATE */
+#endif /* KERNEL */
 #endif /* SYS_KERN_EVENT_H */

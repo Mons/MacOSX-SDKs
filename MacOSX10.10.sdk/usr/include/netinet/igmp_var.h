@@ -134,7 +134,204 @@ struct igmpstat {
 #define IGPS_VERSION_3	3
 #define IGPS_VERSION3_LEN		168
 
+#ifdef PRIVATE
+/*
+ * Per-interface IGMP router version information.
+ */
+#ifndef XNU_KERNEL_PRIVATE
+struct igmp_ifinfo {
+#else
+struct igmp_ifinfo_u {
+#endif /* XNU_KERNEL_PRIVATE */
+	uint32_t igi_ifindex;	/* interface this instance belongs to */
+	uint32_t igi_version;	/* IGMPv3 Host Compatibility Mode */
+	uint32_t igi_v1_timer;	/* IGMPv1 Querier Present timer (s) */
+	uint32_t igi_v2_timer;	/* IGMPv2 Querier Present timer (s) */
+	uint32_t igi_v3_timer;	/* IGMPv3 General Query (interface) timer (s)*/
+	uint32_t igi_flags;	/* IGMP per-interface flags */
+	uint32_t igi_rv;	/* IGMPv3 Robustness Variable */
+	uint32_t igi_qi;	/* IGMPv3 Query Interval (s) */
+	uint32_t igi_qri;	/* IGMPv3 Query Response Interval (s) */
+	uint32_t igi_uri;	/* IGMPv3 Unsolicited Report Interval (s) */
+};
 
+#define IGIF_SILENT	0x00000001	/* Do not use IGMP on this ifp */
+#define IGIF_LOOPBACK	0x00000002	/* Send IGMP reports to loopback */
+
+/*
+ * IGMP version tag.
+ */
+#define IGMP_VERSION_NONE		0 /* Invalid */
+#define IGMP_VERSION_1			1
+#define IGMP_VERSION_2			2
+#define IGMP_VERSION_3			3 /* Default */
+#endif /* PRIVATE */
+
+#ifdef BSD_KERNEL_PRIVATE
+#include <libkern/libkern.h>
+#define IGMP_DEBUG 1
+#ifdef IGMP_DEBUG
+extern int igmp_debug;
+
+#define IGMP_PRINTF(x)	do { if (igmp_debug) printf x; } while (0)
+#define	IGMP_INET_PRINTF(addr, x) do {					\
+	if (igmp_debug) {						\
+		char _igmp_inet_buf[MAX_IPv4_STR_LEN];			\
+		inet_ntop(AF_INET, &(addr), _igmp_inet_buf,		\
+		    sizeof(_igmp_inet_buf));				\
+		printf x;						\
+	}								\
+} while (0)
+#else
+#define	IGMP_PRINTF(x)
+#endif
+
+#define	OIGMPSTAT_ADD(name, val)	atomic_add_32(&igmpstat.name , (val))
+#define	OIGMPSTAT_INC(name)		OIGMPSTAT_ADD(name, 1)
+
+#define	IGMPSTAT_ADD(name, val)		atomic_add_64(&igmpstat_v3.name , (val))
+#define	IGMPSTAT_INC(name)		IGMPSTAT_ADD(name, 1)
+
+#define IGMP_RANDOM_DELAY(X) (random() % (X) + 1)
+
+#define IGMP_MAX_STATE_CHANGES		24 /* Max pending changes per group */
+
+/*
+ * IGMP per-group states.
+ */
+#define IGMP_NOT_MEMBER			0 /* Can garbage collect in_multi */
+#define IGMP_SILENT_MEMBER		1 /* Do not perform IGMP for group */
+#define IGMP_REPORTING_MEMBER		2 /* IGMPv1/2/3 we are reporter */
+#define IGMP_IDLE_MEMBER		3 /* IGMPv1/2 we reported last */
+#define IGMP_LAZY_MEMBER		4 /* IGMPv1/2 other member reporting */
+#define IGMP_SLEEPING_MEMBER		5 /* IGMPv1/2 start query response */
+#define IGMP_AWAKENING_MEMBER		6 /* IGMPv1/2 group timer will start */
+#define IGMP_G_QUERY_PENDING_MEMBER	7 /* IGMPv3 group query pending */
+#define IGMP_SG_QUERY_PENDING_MEMBER	8 /* IGMPv3 source query pending */
+#define IGMP_LEAVING_MEMBER		9 /* IGMPv3 dying gasp (pending last */
+					  /* retransmission of INCLUDE {}) */
+/*
+ * IGMPv3 protocol control variables.
+ */
+#define IGMP_RV_INIT		2	/* Robustness Variable */
+#define IGMP_RV_MIN		1
+#define IGMP_RV_MAX		7
+
+#define IGMP_QI_INIT		125	/* Query Interval (s) */
+#define IGMP_QI_MIN		1
+#define IGMP_QI_MAX		255
+
+#define IGMP_QRI_INIT		10	/* Query Response Interval (s) */
+#define IGMP_QRI_MIN		1
+#define IGMP_QRI_MAX		255
+
+#define IGMP_URI_INIT		3	/* Unsolicited Report Interval (s) */
+#define IGMP_URI_MIN		0
+#define IGMP_URI_MAX		10
+
+#define IGMP_MAX_G_GS_PACKETS		8 /* # of packets to answer G/GS */
+#define IGMP_MAX_STATE_CHANGE_PACKETS	8 /* # of packets per state change */
+#define IGMP_MAX_RESPONSE_PACKETS	16 /* # of packets for general query */
+#define IGMP_MAX_RESPONSE_BURST		4 /* # of responses to send at once */
+#define IGMP_RESPONSE_BURST_INTERVAL	1 /* 1 second */
+
+/*
+ * IGMP-specific mbuf flags.
+ */
+#define M_IGMPV2	M_PROTO1	/* Packet is IGMPv2 */
+#define M_IGMPV3_HDR	M_PROTO2	/* Packet has IGMPv3 headers */
+#define M_GROUPREC	M_PROTO3	/* mbuf chain is a group record */
+#define M_IGMP_LOOP	M_LOOP		/* transmit on loif, not real ifp */
+
+/*
+ * Default amount of leading space for IGMPv3 to allocate at the
+ * beginning of its mbuf packet chains, to avoid fragmentation and
+ * unnecessary allocation of leading mbufs.
+ */
+#define RAOPT_LEN	4		/* Length of IP Router Alert option */
+#define	IGMP_LEADINGSPACE		\
+	(sizeof(struct ip) + RAOPT_LEN + sizeof(struct igmp_report))
+
+struct igmp_ifinfo {
+	decl_lck_mtx_data(, igi_lock);
+	uint32_t igi_refcnt;	/* reference count */
+	uint32_t igi_debug;	/* see ifa_debug flags */
+	LIST_ENTRY(igmp_ifinfo) igi_link;
+	struct ifnet *igi_ifp;	/* interface this instance belongs to */
+	uint32_t igi_version;	/* IGMPv3 Host Compatibility Mode */
+	uint32_t igi_v1_timer;	/* IGMPv1 Querier Present timer (s) */
+	uint32_t igi_v2_timer;	/* IGMPv2 Querier Present timer (s) */
+	uint32_t igi_v3_timer;	/* IGMPv3 General Query (interface) timer (s)*/
+	uint32_t igi_flags;	/* IGMP per-interface flags */
+	uint32_t igi_rv;	/* IGMPv3 Robustness Variable */
+	uint32_t igi_qi;	/* IGMPv3 Query Interval (s) */
+	uint32_t igi_qri;	/* IGMPv3 Query Response Interval (s) */
+	uint32_t igi_uri;	/* IGMPv3 Unsolicited Report Interval (s) */
+	SLIST_HEAD(,in_multi)	igi_relinmhead; /* released groups */
+	struct ifqueue	 igi_gq;	/* queue of general query responses */
+	struct ifqueue   igi_v2q; /* queue of v1/v2 packets */
+};
+
+#define	IGI_LOCK_ASSERT_HELD(_igi)					\
+	lck_mtx_assert(&(_igi)->igi_lock, LCK_MTX_ASSERT_OWNED)
+
+#define	IGI_LOCK_ASSERT_NOTHELD(_igi)					\
+	lck_mtx_assert(&(_igi)->igi_lock, LCK_MTX_ASSERT_NOTOWNED)
+
+#define	IGI_LOCK(_igi)							\
+	lck_mtx_lock(&(_igi)->igi_lock)
+
+#define	IGI_LOCK_SPIN(_igi)						\
+	lck_mtx_lock_spin(&(_igi)->igi_lock)
+
+#define	IGI_CONVERT_LOCK(_igi) do {					\
+	IGI_LOCK_ASSERT_HELD(_igi);					\
+	lck_mtx_convert_spin(&(_igi)->igi_lock);			\
+} while (0)
+
+#define	IGI_UNLOCK(_igi)						\
+	lck_mtx_unlock(&(_igi)->igi_lock)
+
+#define	IGI_ADDREF(_igi)						\
+	igi_addref(_igi, 0)
+
+#define	IGI_ADDREF_LOCKED(_igi)						\
+	igi_addref(_igi, 1)
+
+#define	IGI_REMREF(_igi)						\
+	igi_remref(_igi)
+
+/*
+ * Per-link IGMP context.
+ */
+#define IGMP_IFINFO(ifp)	((ifp)->if_igi)
+
+/*
+ * IGMP timer schedule parameters
+ */
+struct igmp_tparams {
+	int	qpt;	/* querier_present_timers_running */
+	int	it;	/* interface_timers_running */
+	int	cst;	/* current_state_timers_running */
+	int	sct;	/* state_change_timers_running */
+};
+
+extern void igmp_init(struct protosw *, struct domain *);
+extern int igmp_change_state(struct in_multi *, struct igmp_tparams *);
+extern struct igmp_ifinfo *igmp_domifattach(struct ifnet *, int);
+extern void igmp_domifreattach(struct igmp_ifinfo *);
+extern void igmp_domifdetach(struct ifnet *);
+extern void igmp_input(struct mbuf *, int);
+extern int igmp_joingroup(struct in_multi *);
+extern void igmp_leavegroup(struct in_multi *);
+extern void igmp_set_timeout(struct igmp_tparams *);
+extern void igi_addref(struct igmp_ifinfo *, int);
+extern void igi_remref(struct igmp_ifinfo *);
+__private_extern__ void igmp_initsilent(struct ifnet *, struct igmp_ifinfo *);
+
+SYSCTL_DECL(_net_inet_igmp);
+
+#endif /* BSD_KERNEL_PRIVATE */
 
 /*
  * Names for IGMP sysctl objects
@@ -142,4 +339,11 @@ struct igmpstat {
 #define IGMPCTL_STATS		1	/* statistics (read-only) */
 #define IGMPCTL_MAXID		2
 
+#ifdef BSD_KERNEL_PRIVATE
+#define IGMPCTL_NAMES { \
+	{ 0, 0 }, \
+	{ "stats", CTLTYPE_STRUCT }, \
+}
+
+#endif /* BSD_KERNEL_PRIVATE */
 #endif

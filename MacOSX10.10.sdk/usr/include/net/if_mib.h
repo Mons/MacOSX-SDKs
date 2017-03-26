@@ -71,6 +71,14 @@ struct ifmibdata {
 	struct if_data64	ifmd_data; /* generic information and statistics */
 };
 
+#ifdef PRIVATE
+struct ifmibdata_supplemental {
+	struct if_traffic_class	ifmd_traffic_class;
+	struct if_data_extended	ifmd_data_extended;
+	struct if_packet_stats	ifmd_packet_stats;
+	struct if_rxpoll_stats	ifmd_rxpoll_stats;
+};
+#endif /* PRIVATE */
 
 /*
  * sysctl MIB tags at the net.link.generic level
@@ -86,6 +94,9 @@ struct ifmibdata {
 #define	IFDATA_LINKSPECIFIC	2	/* specific to the type of interface */
 #define	IFDATA_ADDRS		3	/* addresses assigned to interface */
 #define	IFDATA_MULTIADDRS	4	/* multicast addresses assigned to interface */
+#ifdef PRIVATE
+#define IFDATA_SUPPLEMENTAL	5	/* supplemental link specific stats */
+#endif /* PRIVATE */
 
 /*
  * MIB tags at the net.link.generic.system level

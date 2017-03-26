@@ -218,10 +218,148 @@ struct tcphdr {
 #define	TCP_SENDMOREACKS	0x103	/* always ack every other packet */
 #define	TCP_ENABLE_ECN		0x104	/* Enable ECN on a connection */
 
+#ifdef PRIVATE
+#define	TCP_INFO		0x200	/* retrieve tcp_info structure */
+#define TCP_MEASURE_SND_BW	0x202	/* Measure sender's bandwidth for this connection */
+#endif /* PRIVATE */
 
 
 #define	TCP_NOTSENT_LOWAT	0x201	/* Low water mark for TCP unsent data */
 
+#ifdef PRIVATE
+#define TCP_MEASURE_BW_BURST	0x203	/* Burst size to use for bandwidth measurement */
+#define TCP_PEER_PID		0x204	/* Lookup pid of the process we're connected to */
+#define TCP_ADAPTIVE_READ_TIMEOUT	0x205	/* Read timeout used as a multiple of RTT */	
+/*
+ * Enable message delivery on a socket, this feature is currently unsupported and
+ * is subjected to change in future.
+ */
+#define	TCP_ENABLE_MSGS 0x206
+#define	TCP_ADAPTIVE_WRITE_TIMEOUT	0x207	/* Write timeout used as a multiple of RTT */
+#define	TCP_NOTIMEWAIT		0x208	/* Avoid going into time-wait */
+#define	TCP_DISABLE_BLACKHOLE_DETECTION	0x209	/* disable PMTU blackhole detection */
+
+/*
+ * The TCP_INFO socket option is a private API and is subject to change
+ */
+#pragma pack(4)
+
+#define	TCPI_OPT_TIMESTAMPS	0x01
+#define	TCPI_OPT_SACK		0x02
+#define	TCPI_OPT_WSCALE		0x04
+#define	TCPI_OPT_ECN		0x08
+
+#define TCPI_FLAG_LOSSRECOVERY	0x01	/* Currently in loss recovery */
+
+/*
+ * Add new fields to this structure at the end only. This will preserve
+ * binary compatibility.
+ */
+struct tcp_info {
+	u_int8_t	tcpi_state;			/* TCP FSM state. */
+	u_int8_t	tcpi_options;		/* Options enabled on conn. */
+	u_int8_t	tcpi_snd_wscale;	/* RFC1323 send shift value. */
+	u_int8_t	tcpi_rcv_wscale;	/* RFC1323 recv shift value. */
+
+	u_int32_t	tcpi_flags;			/* extra flags (TCPI_FLAG_xxx) */
+
+	u_int32_t	tcpi_rto;			/* Retransmission timeout in milliseconds */
+	u_int32_t	tcpi_snd_mss;		/* Max segment size for send. */
+	u_int32_t	tcpi_rcv_mss;		/* Max segment size for receive. */
+
+	u_int32_t	tcpi_rttcur;		/* Most recent value of RTT */
+	u_int32_t	tcpi_srtt;			/* Smoothed RTT */
+	u_int32_t	tcpi_rttvar;		/* RTT variance */
+	u_int32_t	tcpi_rttbest;		/* Best RTT we've seen */
+
+	u_int32_t	tcpi_snd_ssthresh;	/* Slow start threshold. */
+	u_int32_t	tcpi_snd_cwnd;		/* Send congestion window. */
+
+	u_int32_t	tcpi_rcv_space;		/* Advertised recv window. */
+
+	u_int32_t	tcpi_snd_wnd;		/* Advertised send window. */
+	u_int32_t	tcpi_snd_nxt;		/* Next egress seqno */
+	u_int32_t	tcpi_rcv_nxt;		/* Next ingress seqno */
+	
+	int32_t		tcpi_last_outif;	/* if_index of interface used to send last */
+	u_int32_t	tcpi_snd_sbbytes;	/* bytes in snd buffer including data inflight */
+	
+	u_int64_t	tcpi_txpackets __attribute__((aligned(8)));	/* total packets sent */
+	u_int64_t	tcpi_txbytes __attribute__((aligned(8)));
+									/* total bytes sent */	
+	u_int64_t	tcpi_txretransmitbytes __attribute__((aligned(8)));
+									/* total bytes retransmitted */	
+	u_int64_t	tcpi_txunacked __attribute__((aligned(8)));
+									/* current number of bytes not acknowledged */	
+	u_int64_t	tcpi_rxpackets __attribute__((aligned(8)));	/* total packets received */
+	u_int64_t	tcpi_rxbytes __attribute__((aligned(8)));
+									/* total bytes received */
+	u_int64_t	tcpi_rxduplicatebytes __attribute__((aligned(8)));
+									/* total duplicate bytes received */
+	u_int64_t	tcpi_rxoutoforderbytes __attribute__((aligned(8)));
+									/* total out of order bytes received */
+	u_int64_t	tcpi_snd_bw __attribute__((aligned(8)));	/* measured send bandwidth in bits/sec */
+	u_int8_t	tcpi_synrexmits;	/* Number of syn retransmits before connect */
+	u_int8_t	tcpi_unused1;
+	u_int16_t	tcpi_unused2;
+	u_int64_t	tcpi_cell_rxpackets __attribute((aligned(8)));	/* packets received over cellular */
+	u_int64_t	tcpi_cell_rxbytes __attribute((aligned(8)));	/* bytes received over cellular */
+	u_int64_t	tcpi_cell_txpackets __attribute((aligned(8)));	/* packets transmitted over cellular */
+	u_int64_t	tcpi_cell_txbytes __attribute((aligned(8)));	/* bytes transmitted over cellular */
+	u_int64_t	tcpi_wifi_rxpackets __attribute((aligned(8)));	/* packets received over Wi-Fi */
+	u_int64_t	tcpi_wifi_rxbytes __attribute((aligned(8)));	/* bytes received over Wi-Fi */
+	u_int64_t	tcpi_wifi_txpackets __attribute((aligned(8)));	/* packets transmitted over Wi-Fi */
+	u_int64_t	tcpi_wifi_txbytes __attribute((aligned(8)));	/* bytes transmitted over Wi-Fi */
+	u_int64_t	tcpi_wired_rxpackets __attribute((aligned(8)));	/* packets received over Wired */
+	u_int64_t	tcpi_wired_rxbytes __attribute((aligned(8)));	/* bytes received over Wired */
+	u_int64_t	tcpi_wired_txpackets __attribute((aligned(8)));	/* packets transmitted over Wired */
+	u_int64_t	tcpi_wired_txbytes __attribute((aligned(8)));	/* bytes transmitted over Wired */
+};
+
+struct tcp_measure_bw_burst {
+	u_int32_t	min_burst_size; /* Minimum number of packets to use */
+	u_int32_t	max_burst_size; /* Maximum number of packets to use */
+};
+
+/*
+ * Note that IPv6 link local addresses should have the appropriate scope ID
+ */
+
+struct info_tuple {
+	u_int8_t	itpl_proto;
+	union {
+		struct sockaddr		_itpl_sa;
+		struct sockaddr_in	_itpl_sin;
+		struct sockaddr_in6	_itpl_sin6;
+	} itpl_localaddr;
+	union {
+		struct sockaddr		_itpl_sa;
+		struct sockaddr_in	_itpl_sin;
+		struct sockaddr_in6	_itpl_sin6;
+	} itpl_remoteaddr;
+};
+
+#define itpl_local_sa		itpl_localaddr._itpl_sa
+#define itpl_local_sin 		itpl_localaddr._itpl_sin
+#define itpl_local_sin6		itpl_localaddr._itpl_sin6
+#define itpl_remote_sa 		itpl_remoteaddr._itpl_sa
+#define itpl_remote_sin		itpl_remoteaddr._itpl_sin
+#define itpl_remote_sin6	itpl_remoteaddr._itpl_sin6
+
+/*
+ * TCP connection info auxiliary data (CIAUX_TCP)
+ *
+ * Do not add new fields to this structure, just add them to tcp_info 
+ * structure towards the end. This will preserve binary compatibility.
+ */
+typedef struct conninfo_tcp {
+	pid_t			tcpci_peer_pid;	/* loopback peer PID if > 0 */
+	struct tcp_info		tcpci_tcp_info;	/* TCP info */
+} conninfo_tcp_t;
+
+#pragma pack()
+
+#endif /* PRIVATE */
 #endif /* (_POSIX_C_SOURCE && !_DARWIN_C_SOURCE) */
 
 #endif
